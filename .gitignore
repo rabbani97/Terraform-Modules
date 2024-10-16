@@ -1,0 +1,12 @@
+# .gitignore
+
+# Terraform-related files
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+*.tfvars.json
+*.backup
+*.log
+.terraform.lock.hcl
