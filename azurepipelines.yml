@@ -1,0 +1,158 @@
+trigger:
+- none
+
+parameters:
+  - name: subscription_id
+    displayName: subscription_id
+    type: string
+    default: 'aab300ef-5c07-4cc8-a9df-951c157bb99d'
+  - name: resource_group_name
+    displayName: 'Resource Group Name'
+    type: string
+    default: 'dummyrg'
+  - name: storage_account_name
+    displayName: 'Storage Account Name'
+    type: string
+    default: 'dummystgacnt'
+  - name: vnet_name
+    displayName: 'Virtual Network Name'
+    type: string
+    default: 'dummy-vnet001'
+  - name: subnet_name
+    displayName: 'Subnet Name'
+    type: string
+    default: 'dummymy-subnet001'
+
+stages:
+  - stage: Plan 
+    displayName: Plan the Infrastructure
+    jobs:
+    - job: Build
+      pool:
+        vmImage: 'ubuntu-latest'
+      steps:
+      - task: TerraformInstaller@1
+        displayName: Install Terraform
+        inputs:
+          terraformVersion: 'latest'
+
+      - task: TerraformTaskV4@4
+        displayName: Terraform Init
+        inputs:
+          provider: 'azurerm'
+          command: 'init'
+          backendServiceArm: 'Pay-As-You-Go(aab300ef-5c07-4cc8-a9df-951c157bb99d)'
+          backendAzureRmResourceGroupName: 'my-resource-group'
+          backendAzureRmStorageAccountName: 'stgacnttf24889'
+          backendAzureRmContainerName: 'tfstate'
+          backendAzureRmKey: 'terraform.tfstate'
+
+      - task: TerraformTaskV4@4
+        displayName: TF Plan
+        inputs:
+          provider: 'azurerm'
+          command: 'plan'
+          commandOptions: '-var "subscription_id=${{ parameters.subscription_id }}" -var "resource_group_name=${{ parameters.resource_group_name }}" -var "storage_account_name=${{ parameters.storage_account_name }}" -var "vnet_name=${{ parameters.vnet_name }}" -var "subnet_name=${{ parameters.subnet_name }}" -detailed-exitcode -out $(Build.SourcesDirectory)/tfplanfile'
+          environmentServiceNameAzureRM: 'Pay-As-You-Go(aab300ef-5c07-4cc8-a9df-951c157bb99d)'
+
+      - task: ArchiveFiles@2
+        displayName: Archive Files
+        inputs:
+          rootFolderOrFile: '$(Build.SourcesDirectory)/'
+          includeRootFolder: false
+          archiveType: 'zip'
+          archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+          replaceExistingArchive: true
+
+      - task: PublishBuildArtifacts@1
+        displayName: PublishBuildArtifacts
+        inputs:
+          PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+          ArtifactName: '$(Build.BuildId)-build'
+          publishLocation: 'Container'
+
+  - stage: Apply 
+    displayName: Apply the Infrastructure
+    jobs:
+    - job: Deploy
+      pool:
+        vmImage: 'ubuntu-latest'
+        environment: Release
+      steps:
+
+      - task: DownloadPipelineArtifact@2
+        displayName: 'Download Build Artifact'
+        inputs:
+          buildType: 'current'
+          artifactName: '$(Build.BuildId)-build'
+          targetPath: '$(Pipeline.Workspace)'
+
+      - task: ExtractFiles@1
+        displayName: 'Extract Files'
+        inputs:
+          archiveFilePatterns: '$(Pipeline.Workspace)/$(Build.BuildId).zip'
+          destinationFolder: '$(Pipeline.Workspace)/extracted'
+
+      - task: TerraformTaskV4@4
+        displayName: 'Terraform Init'
+        inputs:
+          provider: 'azurerm'
+          command: 'init'
+          workingDirectory: '$(Pipeline.Workspace)/extracted/'
+          backendServiceArm: 'Pay-As-You-Go(aab300ef-5c07-4cc8-a9df-951c157bb99d)'
+          backendAzureRmResourceGroupName: 'my-resource-group'
+          backendAzureRmStorageAccountName: 'stgacnttf24889'
+          backendAzureRmContainerName: 'tfstate'
+          backendAzureRmKey: 'terraform.tfstate'
+
+      - task: TerraformTaskV4@4
+        displayName: 'Terraform Apply'
+        inputs:
+          provider: 'azurerm'
+          command: 'apply'
+          workingDirectory: '$(Pipeline.Workspace)/extracted/'
+          commandOptions: '-auto-approve -var "subscription_id=${{ parameters.subscription_id }}" -var "resource_group_name=${{ parameters.resource_group_name }}" -var "storage_account_name=${{ parameters.storage_account_name }}" -var "vnet_name=${{ parameters.vnet_name }}" -var "subnet_name=${{ parameters.subnet_name }}"'
+          environmentServiceNameAzureRM: 'Pay-As-You-Go(aab300ef-5c07-4cc8-a9df-951c157bb99d)'
+
+  - stage: Destroy 
+    displayName: Destroy the Infrastructure
+    jobs:
+    - job: Deploy
+      pool:
+        vmImage: 'ubuntu-latest'
+        environment: Release
+      steps:
+
+      - task: DownloadPipelineArtifact@2
+        displayName: 'Download Build Artifact'
+        inputs:
+          buildType: 'current'
+          artifactName: '$(Build.BuildId)-build'
+          targetPath: '$(Pipeline.Workspace)'
+
+      - task: ExtractFiles@1
+        displayName: 'Extract Files'
+        inputs:
+          archiveFilePatterns: '$(Pipeline.Workspace)/$(Build.BuildId).zip'
+          destinationFolder: '$(Pipeline.Workspace)/extracted'
+
+      - task: TerraformTaskV4@4
+        displayName: 'Terraform Init'
+        inputs:
+          provider: 'azurerm'
+          command: 'init'
+          workingDirectory: '$(Pipeline.Workspace)/extracted/'
+          backendServiceArm: 'Pay-As-You-Go(aab300ef-5c07-4cc8-a9df-951c157bb99d)'
+          backendAzureRmResourceGroupName: 'my-resource-group'
+          backendAzureRmStorageAccountName: 'stgacnttf24889'
+          backendAzureRmContainerName: 'tfstate'
+          backendAzureRmKey: 'terraform.tfstate'
+
+      - task: TerraformTaskV4@4
+        displayName: 'Terraform Destroy'
+        inputs:
+          provider: 'azurerm'
+          command: 'destroy'
+          workingDirectory: '$(Pipeline.Workspace)/extracted/'
+          commandOptions: '-auto-approve -var "subscription_id=${{ parameters.subscription_id }}" -var "resource_group_name=${{ parameters.resource_group_name }}" -var "storage_account_name=${{ parameters.storage_account_name }}" -var "vnet_name=${{ parameters.vnet_name }}" -var "subnet_name=${{ parameters.subnet_name }}"'
+          environmentServiceNameAzureRM: 'Pay-As-You-Go(aab300ef-5c07-4cc8-a9df-951c157bb99d)'
